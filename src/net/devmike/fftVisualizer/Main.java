@@ -30,8 +30,8 @@ public class Main
 		FFTVisualizer fftVisualizer = new FFTVisualizer();
 		FFTVisualizer2 fftVisualizer2 = new FFTVisualizer2();
 		
-		//streamFromFile(audioProcessor, fftProcessor, morseCodeDetector, fftVisualizer);
-		streamFromMic(audioProcessor, fftProcessor, morseCodeDetector, fftVisualizer, fftVisualizer2);
+		streamFromFile("silent.wav", audioProcessor, fftProcessor, morseCodeDetector, fftVisualizer, fftVisualizer2);
+		//streamFromMic(audioProcessor, fftProcessor, morseCodeDetector, fftVisualizer, fftVisualizer2);
 	}
 	
 	private static void streamFromMic(AudioProcessor audioProcessor, FFTProcessor fftProcessor, MorseCodeDetector morseCodeDetector, FFTVisualizer fftVisualizer, FFTVisualizer2 fftVisualizer2) throws Exception
@@ -86,16 +86,25 @@ public class Main
 		}
 	}
 	
-	private static void streamFromFile(AudioProcessor audioProcessor, FFTProcessor fftProcessor, MorseCodeDetector morseCodeDetector, FFTVisualizer fftVisualizer) throws Exception
+	private static void streamFromFile(String filename, AudioProcessor audioProcessor, FFTProcessor fftProcessor, MorseCodeDetector morseCodeDetector, FFTVisualizer fftVisualizer, FFTVisualizer2 fftVisualizer2) throws Exception
 	{
 		// get test file
-		File testFile = new File(System.getProperty("user.dir") + File.separatorChar + "res" + File.separatorChar + "testFlowMeterVeryFast.wav");
+		File testFile = new File(System.getProperty("user.dir") + File.separatorChar + "res" + File.separatorChar + filename);
 		
 		// load file as audio stream
 		AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(testFile);
 		
 		// get the audio format from the steam
 		AudioFormat audioFormat = audioInputStream.getFormat();
+		
+		System.out.println("--- Audio Format ---");
+		System.out.println("Encoding   : " + audioFormat.getEncoding());
+		System.out.println("Sample Rate: " + audioFormat.getSampleRate());
+		System.out.println("Sample Size: " + audioFormat.getSampleSizeInBits());
+		System.out.println("Channels   : " + audioFormat.getChannels());
+		System.out.println("Frame Size : " + audioFormat.getFrameSize());
+		System.out.println("Frame Rate : " + audioFormat.getFrameRate());
+		System.out.println("--------------------");
 		
 		Config.setSampleRate((int)audioFormat.getSampleRate());
 		
@@ -131,8 +140,12 @@ public class Main
 			{
 				FFTSet[] fftSets = fftProcessor.processAudioSamples(audioProcessor.processAudioData(audioByteBuffer, 0, numBytesRead, audioFormat.isBigEndian()));
 				
-				if (fftSets.length > 0)
-					fftVisualizer.displayFFTSet(fftSets[0]);
+				//morseCodeDetector.processFFTSets(fftSets);
+				
+				//if (fftSets.length > 0)
+				//	fftVisualizer.displayFFTSet(fftSets[0]);
+				
+				fftVisualizer2.displayFFTSets(fftSets);
 				
 				totalNumBytesRead += numBytesRead;
 			}

@@ -19,17 +19,20 @@ public class FFTVisualizer2
 	private static final int INIT_PANEL_WIDTH  = 1200;
 	private static final int INIT_PANEL_HEIGHT = 500;
 	
-	private static final int VISUALIZATION_MIN_FREQUENCY = 500;
-	private static final int VISUALIZATION_MAX_FREQUENCY = 3000;
-	
-	private static final int VISUALIZATION_TIME_ORIGIN_MS = 0;
-	private static final int VISUALIZATION_TIME_RANGE_MS  = 5000;
-	
-	private static final long VISUALIZATION_TIME_ORIGIN   = -AudioSample.TIME_MIN_VALUE;
-	private long VISUALIZATION_TIME_RANGE;
+	private static final int DATA_DURATION_MS = 5000;
 	
 	private static final int VISUALIZATION_AMPLITUDE_ORIGIN = 0;
 	private static final int VISUALIZATION_AMPLITUDE_RANGE  = 2000000;
+	
+	private static final int VISUALIZATION_TIME_RANGE_MS = 5000;
+	private static final int VISUALIZATION_TIME_MARKING_INTERVAL_MS = 500;
+	
+	private static final int VISUALIZATION_MIN_FREQUENCY = 533;
+	private static final int VISUALIZATION_MAX_FREQUENCY = 1533;
+			
+	private static final int VISUALIZATION_NUM_TIME_MARKINGS = DATA_DURATION_MS / VISUALIZATION_TIME_MARKING_INTERVAL_MS + 1;
+	
+	
 	
 	// ===================================================================
 	// Variables
@@ -46,6 +49,22 @@ public class FFTVisualizer2
 	// -------------------------------------------------------------------
 	// visualization data
 	
+	private long visualizationTimeOrigin;
+	private long visualizationTimeRange;
+	private long visualizationTimeMarkingInterval;
+	
+	private long dataDuration;
+	private int dataMaxNumPoints;
+	
+	private FrequencyPlot[] frequencyPlots;
+	
+	
+	
+	// ===================================================================
+	// Sub-Classes
+	//
+	// ===================================================================
+
 	private static final class FrequencyPoint
 	{
 		public final long time;
@@ -72,7 +91,7 @@ public class FFTVisualizer2
 			this.color = color;
 		}
 	}
-	private FrequencyPlot[] frequencyPlots;
+	
 	
 	
 	// ===================================================================
@@ -115,7 +134,10 @@ public class FFTVisualizer2
 	{
 		if (frequencyPlots == null)
 		{
-			VISUALIZATION_TIME_RANGE = Util.msToTime(5000);
+			visualizationTimeRange           = Util.msToTime(VISUALIZATION_TIME_RANGE_MS);
+			dataDuration                     = Util.msToTime(DATA_DURATION_MS);
+			visualizationTimeMarkingInterval = Util.msToTime(VISUALIZATION_TIME_MARKING_INTERVAL_MS);
+			dataMaxNumPoints                 = (int)Math.ceil(((double)dataDuration) / Config.NUM_AUDIO_SAMPLES_IN_FFT_SET);
 			
 			Color[] colors = {
 				Color.RED,
@@ -126,29 +148,36 @@ public class FFTVisualizer2
 				Color.PINK
 			};
 			
+			int startFFTSetSampleIndex = 1;
+			int endFFTSetSampleIndex   = fftSet.fftSamples.length / 2;
+			
 			int fftSetSampleStartIndex  = -1;
 			int fftSetSampleEndingIndex = -1;
 			
-			for (int i = 1; i < fftSet.fftSamples.length / 2 - 1; ++i)
+			for (int i = startFFTSetSampleIndex; i < endFFTSetSampleIndex; ++i)
 			{
-				if ((int)fftSet.fftSamples[i].frequency == 1033)
-				{
-					fftSetSampleStartIndex = i;
-					fftSetSampleEndingIndex = i + 1;
-					break;
-				}
-				/*if (fftSetSampleStartIndex == -1 && fftSet.fftSamples[i].frequency >= VISUALIZATION_MIN_FREQUENCY)
+				if (fftSetSampleStartIndex == -1 && fftSet.fftSamples[i].frequency >= VISUALIZATION_MIN_FREQUENCY)
 					fftSetSampleStartIndex = i;
 				
 				if (fftSet.fftSamples[i].frequency > VISUALIZATION_MAX_FREQUENCY)
 				{
 					fftSetSampleEndingIndex = i;
 					break;
-				}*/
+				}
 			}
 			
-			if (fftSetSampleStartIndex == -1)  { System.err.println("MorseCodeDetector.MIN_MORSE_CODE_FREQUENCY too low!");  System.exit(1); return; }
-			if (fftSetSampleEndingIndex == -1) { System.err.println("MorseCodeDetector.MAX_MORSE_CODE_FREQUENCY too high!"); System.exit(1); return; }
+			if (fftSetSampleStartIndex == -1 && fftSetSampleEndingIndex != -1)
+				fftSetSampleStartIndex = startFFTSetSampleIndex;
+			
+			if (fftSetSampleEndingIndex == -1 && fftSetSampleStartIndex != -1)
+				fftSetSampleEndingIndex = endFFTSetSampleIndex;
+				
+			if (fftSetSampleStartIndex == -1)
+			{
+				System.err.println("VISUALIZATION_MIN_FREQUENCY too high!"); 
+				System.exit(1);
+				return;
+			}
 			
 			frequencyPlots = new FrequencyPlot[fftSetSampleEndingIndex - fftSetSampleStartIndex];
 			
@@ -156,8 +185,20 @@ public class FFTVisualizer2
 				frequencyPlots[i - fftSetSampleStartIndex] = new FrequencyPlot(fftSet.fftSamples[i].frequency, i, colors[(i - fftSetSampleStartIndex) % colors.length]);
 		}
 		
+		
+		// check for overflow
+		if (fftSet.startTime < AudioSample.TIME_MIN_VALUE + visualizationTimeRange)
+			visualizationTimeOrigin = AudioSample.TIME_MIN_VALUE;
+		else
+			visualizationTimeOrigin = fftSet.startTime - visualizationTimeRange;
+		
 		for (int i = 0; i < frequencyPlots.length; ++i)
+		{
 			frequencyPlots[i].points.add(new FrequencyPoint(fftSet.startTime, fftSet.fftSamples[frequencyPlots[i].fftSetSampleIndex].amplitude));
+			
+			if (frequencyPlots[i].points.size() > dataMaxNumPoints)
+				frequencyPlots[i].points.remove(0);
+		}
 		
 		visualizerFrame.repaint();
 	}
@@ -177,31 +218,28 @@ public class FFTVisualizer2
 			if (frequencyPlots == null)
 				return;
 			
-			for (int i = 0; i < frequencyPlots.length; ++i)
-			{
-				g.setColor(frequencyPlots[i].color);
-				g.drawString(frequencyPlots[i].frequency + " Hz", visualizerPanel.getWidth() - 200, 10 + 15 * i);
-				
-				for (int j = 1; j < frequencyPlots[i].points.size(); ++j)
-				{
-					g.drawLine(
-							getXForTime(frequencyPlots[i].points.get(j - 1).time),
-							getYForAmplitude(frequencyPlots[i].points.get(j - 1).amplitude),
-							getXForTime(frequencyPlots[i].points.get(j).time),
-							getYForAmplitude(frequencyPlots[i].points.get(j).amplitude));
-				}
-			}
-			
 			g.setColor(Color.GRAY);
-			for (long i = VISUALIZATION_TIME_ORIGIN_MS; i < VISUALIZATION_TIME_RANGE_MS; i += 1000)
+			
+			// make the time relative to 0 and floor to the nearest interval
+			// warning! This will cause an overflow when visualizationTimeOrigin > -1
+			long numMarkingIntervals = (long)Math.floor(((double)visualizationTimeOrigin - AudioSample.TIME_MIN_VALUE) / visualizationTimeMarkingInterval);
+			
+			// get the time of the number of intervals and make relative to min time
+			long relativeTimeMarkingsTime   = numMarkingIntervals * visualizationTimeMarkingInterval + AudioSample.TIME_MIN_VALUE;
+			long relativeTimeMarkingsTimeMS = numMarkingIntervals * VISUALIZATION_TIME_MARKING_INTERVAL_MS;
+			
+			for (long i = 0; i < VISUALIZATION_NUM_TIME_MARKINGS; ++i)
 			{
-				int x = getXForTime(VISUALIZATION_TIME_ORIGIN + Util.msToTime(i));
+				long markingTime   = relativeTimeMarkingsTime   + i * visualizationTimeMarkingInterval;
+				long markingTimeMS = relativeTimeMarkingsTimeMS + i * VISUALIZATION_TIME_MARKING_INTERVAL_MS;
+				
+				int x = getXForTime(markingTime);
 				
 				g.drawLine(
 						x, 0,
 						x, visualizerPanel.getHeight());
 				
-				g.drawString(i + "ms", x + 5, visualizerPanel.getHeight() - 10);
+				g.drawString((markingTimeMS / 1000.0f) + "s", x + 5, visualizerPanel.getHeight() - 10);
 			}
 			
 			
@@ -213,7 +251,31 @@ public class FFTVisualizer2
 						0,                          y,
 						visualizerPanel.getWidth(), y);
 				
-				g.drawString(i + "dB", 0, y);
+				g.drawString(i / 100000 + " kdB", 1, y - 1);
+			}
+			
+			
+			g.setColor(Color.WHITE);
+			g.fillRect(visualizerPanel.getWidth() - 90, 0, 90, 15 * frequencyPlots.length + 20);
+			
+			g.setColor(Color.GRAY);
+			g.drawRect(visualizerPanel.getWidth() - 90, -1, 91, 15 * frequencyPlots.length + 21);
+			
+			for (int i = 0; i < frequencyPlots.length; ++i)
+			{
+				g.setColor(frequencyPlots[i].color);
+				g.drawString((int)frequencyPlots[i].frequency + " Hz", visualizerPanel.getWidth() - 80, 20 + 15 * i);
+				
+				for (int j = 1; j < frequencyPlots[i].points.size(); ++j)
+				{
+					g.drawLine(
+							getXForTime(frequencyPlots[i].points.get(j - 1).time),
+							getYForAmplitude(frequencyPlots[i].points.get(j - 1).amplitude),
+							getXForTime(frequencyPlots[i].points.get(j).time),
+							getYForAmplitude(frequencyPlots[i].points.get(j).amplitude));
+					
+					//g.drawLine(getXForTime(frequencyPlots[i].points.get(j).time), getYForAmplitude(frequencyPlots[i].points.get(j).amplitude) - 10, getXForTime(frequencyPlots[i].points.get(j).time), getYForAmplitude(frequencyPlots[i].points.get(j).amplitude) + 10);
+				}
 			}
 		}
 	}
@@ -227,7 +289,7 @@ public class FFTVisualizer2
 	 */
 	private int getXForTime(long time)
 	{
-		return (int)((time - VISUALIZATION_TIME_ORIGIN) * (visualizerPanel.getWidth() / ((double)VISUALIZATION_TIME_RANGE)));
+		return (int)((time - visualizationTimeOrigin) * (visualizerPanel.getWidth() / ((double)visualizationTimeRange)));
 	}
 	
 	/**
